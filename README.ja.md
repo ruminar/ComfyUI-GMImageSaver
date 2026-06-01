@@ -35,6 +35,10 @@ ComfyUI用の、GraphicsMagickを用いた画像保存ノード群じゃ。
 
 **GraphicsMagick が必須じゃ。**
 
+- [GraphicsMagick official site](https://www.graphicsmagick.org/)
+- [GraphicsMagick Download](https://www.graphicsmagick.org/download.html)
+- [Windows Installation Notes](https://www.graphicsmagick.org/INSTALL-windows.html)
+
 このノードは、以下の順序で GraphicsMagick の実行パスを探すぞ。
 
 1. 環境変数 `GM_PATH`

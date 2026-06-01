@@ -28,7 +28,12 @@ For PNG output, use ComfyUI's standard Save Image node.
 
 GraphicsMagick is required.
 
-The node resolves GraphicsMagick in this order:
+Download GraphicsMagick from the official site:
+
+- [GraphicsMagick Download](https://www.graphicsmagick.org/download.html)
+- [Windows Installation Notes](https://www.graphicsmagick.org/INSTALL-windows.html)
+
+GM Image JPEG Save resolves GraphicsMagick in this order:
 
 1. `GM_PATH` environment variable
 2. `gm` from PATH
