@@ -1,21 +1,23 @@
-import datetime
 import os
 import re
 import subprocess
-from typing import List, Optional
+from datetime import datetime
+from typing import Any, List, Optional, Tuple
 
 import numpy as np
-import folder_paths
+
+try:
+    import folder_paths
+except Exception:  # pragma: no cover - ComfyUI provides this module at runtime
+    folder_paths = None
+
+try:
+    from comfy.utils import ProgressBar
+except Exception:  # pragma: no cover - ComfyUI provides this module at runtime
+    ProgressBar = None
 
 
-_NODE_NAME = "GM Image JPEG Save"
-_ENV_GM_PATH = "GM_PATH"
-_JPEG_EXT = ".jpg"
-_COUNTER_WIDTH = 4
-_MAX_PART_LEN = 120
-_GM_TIMEOUT_SECONDS = 120
-
-_DIRECTORY_PATTERNS = [
+DIRECTORY_PATTERNS = [
     "none",
     "date",
     "prefix",
@@ -25,275 +27,265 @@ _DIRECTORY_PATTERNS = [
     "label_date",
     "label/date",
     "prefix_label",
-    "prefix_label_date",
     "prefix/label",
+    "prefix_label_date",
     "prefix/label/date",
+    "prefix_date_label",
+    "prefix/date/label",
 ]
 
-_FILENAME_DATE_FORMATS = [
+FILENAME_DATE_FORMATS = [
     "none",
     "yyyyMMdd",
     "yyyyMMdd_HHmm",
 ]
 
-_SUBSAMPLING_VALUES = [
+SUBSAMPLING_OPTIONS = [
     "4:4:4",
     "4:2:2",
     "4:2:0",
 ]
 
-_WINDOWS_RESERVED_NAMES = {
+# GraphicsMagick/ImageMagick-style JPEG sampling factors.
+SUBSAMPLING_TO_GM = {
+    "4:4:4": "1x1,1x1,1x1",
+    "4:2:2": "2x1,1x1,1x1",
+    "4:2:0": "2x2,1x1,1x1",
+}
+
+# Generated directory/file components are sanitized. output_dir itself is not
+# sanitized because it may be an absolute Windows path such as C:\foo\bar.
+INVALID_NAME_CHARS_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f\-]+')
+WHITESPACE_RE = re.compile(r"\s+")
+MULTI_UNDERSCORE_RE = re.compile(r"_+")
+MAX_PATH_PART_LENGTH = 120
+MAX_FILENAME_STEM_LENGTH = 220
+MAX_JPEG_COMMENT_BYTES = 65000
+COUNTER_WIDTH = 4
+JPEG_EXTENSION = ".jpg"
+
+WINDOWS_RESERVED_NAMES = {
     "CON", "PRN", "AUX", "NUL",
     "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
     "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 }
 
-# Windows-invalid characters, path separators, ASCII control chars, and hyphen/minus.
-# The node intentionally uses underscores for generated names and does not emit '-' separators.
-_INVALID_NAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f\-]+')
-_MULTI_UNDERSCORE = re.compile(r'_+')
-_COUNTER_RE_CACHE = {}
+
+class _NoopProgressBar:
+    def update(self, amount: int = 1):
+        return None
+
+
+def _make_progress_bar(total: int):
+    if ProgressBar is None:
+        return _NoopProgressBar()
+    try:
+        return ProgressBar(total)
+    except Exception:
+        return _NoopProgressBar()
+
+
+def _get_comfy_output_directory() -> str:
+    if folder_paths is None:
+        raise RuntimeError("ComfyUI folder_paths module is not available.")
+    return folder_paths.get_output_directory()
 
 
 def _resolve_gm_command() -> str:
-    """Resolve GraphicsMagick command.
+    gm_path = os.environ.get("GM_PATH", "").strip()
+    if gm_path:
+        gm_path = os.path.expanduser(os.path.expandvars(gm_path))
+        if not os.path.isfile(gm_path):
+            raise RuntimeError(
+                f"GM_PATH is set but does not point to a file: {gm_path}"
+            )
+        return gm_path
+    return "gm"
 
-    Priority:
-    1. GM_PATH environment variable
-    2. gm from PATH
-    """
-    gm_path = os.environ.get(_ENV_GM_PATH, "").strip().strip('"')
-    return gm_path if gm_path else "gm"
 
-
-def _sanitize_name(value: object, default: str, max_len: int = _MAX_PART_LEN) -> str:
-    """Sanitize one filename/directory component.
-
-    This is intentionally conservative for cross-platform ComfyUI workflows:
-    - replaces Windows-forbidden characters and path separators
-    - replaces hyphen/minus with underscore
-    - trims trailing dots/spaces, which are problematic on Windows
-    - protects Windows reserved device names
-    """
-    text = "" if value is None else str(value)
-    text = text.strip()
-    text = _INVALID_NAME_CHARS.sub("_", text)
-    text = re.sub(r"\s+", "_", text)
-    text = _MULTI_UNDERSCORE.sub("_", text)
-    text = text.strip(" _.\t\r\n")
+def _sanitize_path_part(value: Any, fallback: str = "unnamed") -> str:
+    text = str(value if value is not None else "").strip()
+    text = INVALID_NAME_CHARS_RE.sub("_", text)
+    text = WHITESPACE_RE.sub("_", text)
+    text = MULTI_UNDERSCORE_RE.sub("_", text)
+    text = text.strip("._ ")
 
     if not text:
-        text = default
+        text = fallback
 
-    if len(text) > max_len:
-        text = text[:max_len].rstrip(" _.\t\r\n") or default
+    # Avoid problematic Windows device names.
+    if text.upper() in WINDOWS_RESERVED_NAMES:
+        text = f"_{text}_"
 
-    if text.upper() in _WINDOWS_RESERVED_NAMES:
-        text = f"{text}_"
+    if len(text) > MAX_PATH_PART_LENGTH:
+        text = text[:MAX_PATH_PART_LENGTH].rstrip("._ ") or fallback
 
     return text
 
 
-def _sanitize_output_dir(raw: object) -> Optional[str]:
-    if raw is None:
-        return None
-    text = str(raw).strip().strip('"')
-    return text if text else None
+def _limit_filename_stem(stem: str) -> str:
+    stem = MULTI_UNDERSCORE_RE.sub("_", stem).strip("._ ") or "image"
+    if len(stem) > MAX_FILENAME_STEM_LENGTH:
+        stem = stem[:MAX_FILENAME_STEM_LENGTH].rstrip("._ ") or "image"
+    return stem
 
 
-def _resolve_base_output_dir(output_dir: Optional[str]) -> str:
-    """Resolve base output directory.
-
-    - None/empty: ComfyUI output directory
-    - absolute path: used as-is
-    - relative path: under ComfyUI output directory
-    """
-    raw = _sanitize_output_dir(output_dir)
-    if not raw:
-        return folder_paths.get_output_directory()
-
-    raw = os.path.expanduser(os.path.expandvars(raw))
-    if os.path.isabs(raw):
-        return os.path.normpath(raw)
-
-    return os.path.normpath(os.path.join(folder_paths.get_output_directory(), raw))
-
-
-def _filename_date_text(now: datetime.datetime, filename_date_format: str) -> str:
+def _build_file_date_text(filename_date_format: str, now: datetime) -> str:
     if filename_date_format == "none":
         return ""
     if filename_date_format == "yyyyMMdd":
         return now.strftime("%Y%m%d")
     if filename_date_format == "yyyyMMdd_HHmm":
         return now.strftime("%Y%m%d_%H%M")
-    raise ValueError(f"[{_NODE_NAME}] Unsupported filename_date_format: {filename_date_format}")
+    raise ValueError(f"Unsupported filename_date_format: {filename_date_format}")
 
 
-def _directory_parts(
+def _build_dir_date_text(now: datetime) -> str:
+    return now.strftime("%Y%m%d")
+
+
+def _resolve_base_output_dir(output_dir: Optional[str]) -> str:
+    if output_dir is None:
+        return _get_comfy_output_directory()
+
+    raw = str(output_dir).strip()
+    if not raw:
+        return _get_comfy_output_directory()
+
+    raw = os.path.expanduser(os.path.expandvars(raw))
+    if os.path.isabs(raw):
+        return os.path.normpath(raw)
+    return os.path.normpath(os.path.join(_get_comfy_output_directory(), raw))
+
+
+def _requires_label(directory_pattern: str) -> bool:
+    return "label" in directory_pattern
+
+
+def _build_directory_parts(
     directory_pattern: str,
     prefix_safe: str,
-    label_safe: str,
+    label_safe: Optional[str],
     dir_date_text: str,
 ) -> List[str]:
-    uses_label = "label" in directory_pattern
-    if uses_label and not label_safe:
-        raise ValueError(
-            f"[{_NODE_NAME}] directory_pattern uses label, but no label string was provided. "
-            "Connect a STRING node to the optional label input, or choose a pattern without label."
+    if directory_pattern not in DIRECTORY_PATTERNS:
+        raise ValueError(f"Unsupported directory_pattern: {directory_pattern}")
+
+    if _requires_label(directory_pattern) and not label_safe:
+        raise RuntimeError(
+            "directory_pattern uses label, but no label string was provided. "
+            "Connect a STRING node to the label input, or choose a pattern without label."
         )
 
     if directory_pattern == "none":
         return []
     if directory_pattern == "date":
         return [dir_date_text]
-
     if directory_pattern == "prefix":
         return [prefix_safe]
     if directory_pattern == "prefix_date":
         return [f"{prefix_safe}_{dir_date_text}"]
     if directory_pattern == "prefix/date":
         return [prefix_safe, dir_date_text]
-
     if directory_pattern == "label":
         return [label_safe]
     if directory_pattern == "label_date":
         return [f"{label_safe}_{dir_date_text}"]
     if directory_pattern == "label/date":
         return [label_safe, dir_date_text]
-
     if directory_pattern == "prefix_label":
         return [f"{prefix_safe}_{label_safe}"]
-    if directory_pattern == "prefix_label_date":
-        return [f"{prefix_safe}_{label_safe}_{dir_date_text}"]
     if directory_pattern == "prefix/label":
         return [prefix_safe, label_safe]
+    if directory_pattern == "prefix_label_date":
+        return [f"{prefix_safe}_{label_safe}_{dir_date_text}"]
     if directory_pattern == "prefix/label/date":
         return [prefix_safe, label_safe, dir_date_text]
+    if directory_pattern == "prefix_date_label":
+        return [f"{prefix_safe}_{dir_date_text}_{label_safe}"]
+    if directory_pattern == "prefix/date/label":
+        return [prefix_safe, dir_date_text, label_safe]
 
-    raise ValueError(f"[{_NODE_NAME}] Unsupported directory_pattern: {directory_pattern}")
+    raise ValueError(f"Unsupported directory_pattern: {directory_pattern}")
 
 
-def _build_filename_stem(prefix_safe: str, label_safe: str, filename_date: str) -> str:
+def _build_save_dir(
+    output_dir: Optional[str],
+    directory_pattern: str,
+    prefix_safe: str,
+    label_safe: Optional[str],
+    dir_date_text: str,
+) -> str:
+    base_dir = _resolve_base_output_dir(output_dir)
+    parts = _build_directory_parts(directory_pattern, prefix_safe, label_safe, dir_date_text)
+    save_dir = os.path.join(base_dir, *parts) if parts else base_dir
+    os.makedirs(save_dir, exist_ok=True)
+    return save_dir
+
+
+def _build_filename_stem(
+    prefix_safe: str,
+    label_safe: Optional[str],
+    file_date_text: str,
+) -> str:
     parts = [prefix_safe]
     if label_safe:
         parts.append(label_safe)
-    if filename_date:
-        parts.append(filename_date)
-    return "_".join(parts)
+    if file_date_text:
+        parts.append(file_date_text)
+    return _limit_filename_stem("_".join(parts))
 
 
 def _next_counter(save_dir: str, stem: str) -> int:
-    """Find next 4-digit counter for files named stem_NNNN.jpg."""
-    cache_key = stem
-    pattern = _COUNTER_RE_CACHE.get(cache_key)
-    if pattern is None:
-        pattern = re.compile(rf"^{re.escape(stem)}_(\d{{{_COUNTER_WIDTH},}})\.jpe?g$", re.IGNORECASE)
-        _COUNTER_RE_CACHE[cache_key] = pattern
-
-    max_seen = 0
+    prefix = f"{stem}_"
+    max_counter = 0
     try:
-        for name in os.listdir(save_dir):
-            match = pattern.match(name)
-            if match:
-                try:
-                    max_seen = max(max_seen, int(match.group(1)))
-                except ValueError:
-                    pass
+        names = os.listdir(save_dir)
     except FileNotFoundError:
         return 1
 
-    return max_seen + 1
+    for name in names:
+        if not name.lower().endswith(JPEG_EXTENSION):
+            continue
+        if not name.startswith(prefix):
+            continue
+        tail = name[len(prefix):-len(JPEG_EXTENSION)]
+        if len(tail) == COUNTER_WIDTH and tail.isdigit():
+            max_counter = max(max_counter, int(tail))
+    return max_counter + 1
 
 
-def _tensor_to_rgb_bytes(image) -> tuple[bytes, int, int]:
-    """Convert one ComfyUI IMAGE tensor [H, W, C] float 0..1 to raw RGB bytes."""
-    if hasattr(image, "detach"):
-        image = image.detach()
-    if hasattr(image, "cpu"):
-        image = image.cpu()
+def _tensor_to_rgb_bytes_and_size(image_tensor) -> Tuple[bytes, int, int]:
+    img = image_tensor.detach().cpu().numpy()
+    img = np.clip(img * 255.0, 0, 255).astype(np.uint8)
 
-    arr = image.numpy() if hasattr(image, "numpy") else np.asarray(image)
-    arr = np.asarray(arr)
+    if img.ndim != 3:
+        raise RuntimeError(f"Expected image tensor with 3 dimensions (HWC), got shape {img.shape}")
 
-    if arr.ndim != 3:
-        raise ValueError(f"[{_NODE_NAME}] Expected IMAGE tensor with shape [H, W, C], got shape {arr.shape}.")
-
-    h, w, c = arr.shape
-    if c == 1:
-        arr = np.repeat(arr, 3, axis=2)
-    elif c >= 3:
-        arr = arr[:, :, :3]
+    height, width, channels = img.shape
+    if channels == 4:
+        img = img[:, :, :3]
+    elif channels == 3:
+        pass
+    elif channels == 1:
+        img = np.repeat(img, 3, axis=2)
     else:
-        raise ValueError(f"[{_NODE_NAME}] Expected at least 1 channel, got {c}.")
+        raise RuntimeError(f"Expected 1, 3, or 4 channels, got shape {img.shape}")
 
-    arr = np.clip(arr * 255.0, 0, 255).astype(np.uint8)
-    arr = np.ascontiguousarray(arr)
-    return arr.tobytes(), w, h
+    return img.tobytes(), int(width), int(height)
 
 
-def _run_graphicsmagick(
-    gm_cmd: str,
-    raw_rgb: bytes,
-    width: int,
-    height: int,
-    output_path: str,
-    quality: int,
-    subsampling: str,
-    progressive: bool,
-    comment: Optional[str],
-) -> None:
-    cmd = [
-        gm_cmd,
-        "convert",
-        "-size",
-        f"{width}x{height}",
-        "-depth",
-        "8",
-        "rgb:-",
-        "-sampling-factor",
-        subsampling,
-        "-quality",
-        str(int(quality)),
-    ]
-
-    if progressive:
-        # Plane interlace produces progressive JPEG output for JPEG encoders that support it.
-        cmd.extend(["-interlace", "Plane"])
-
-    if comment is not None:
-        comment_text = str(comment)
-        if comment_text:
-            cmd.extend(["-comment", comment_text])
-
-    cmd.append(output_path)
-
-    try:
-        completed = subprocess.run(
-            cmd,
-            input=raw_rgb,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=_GM_TIMEOUT_SECONDS,
-            check=False,
-        )
-    except FileNotFoundError as exc:
-        raise RuntimeError(
-            f"[{_NODE_NAME}] GraphicsMagick executable was not found. "
-            f"Set the {_ENV_GM_PATH} environment variable, or make sure 'gm' is available in PATH. "
-            f"Resolved command: {gm_cmd!r}"
-        ) from exc
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(
-            f"[{_NODE_NAME}] GraphicsMagick process timed out after {_GM_TIMEOUT_SECONDS} seconds."
-        ) from exc
-
-    if completed.returncode != 0:
-        stderr = completed.stderr.decode("utf-8", errors="replace").strip()
-        stdout = completed.stdout.decode("utf-8", errors="replace").strip()
-        details = stderr or stdout or "No output from GraphicsMagick."
-        raise RuntimeError(
-            f"[{_NODE_NAME}] GraphicsMagick failed with exit code {completed.returncode}: {details}"
-        )
+def _normalize_comment(comment: Optional[str]) -> Optional[str]:
+    if comment is None:
+        return None
+    text = str(comment)
+    if not text:
+        return None
+    encoded = text.encode("utf-8")
+    if len(encoded) > MAX_JPEG_COMMENT_BYTES:
+        encoded = encoded[:MAX_JPEG_COMMENT_BYTES]
+        text = encoded.decode("utf-8", errors="ignore")
+    return text
 
 
 class GMImageJpegSave:
@@ -303,19 +295,15 @@ class GMImageJpegSave:
             "required": {
                 "images": ("IMAGE",),
                 "filename_prefix": ("STRING", {"default": "image"}),
-                "directory_pattern": (_DIRECTORY_PATTERNS, {"default": "date"}),
-                "filename_date_format": (_FILENAME_DATE_FORMATS, {"default": "none"}),
+                "directory_pattern": (DIRECTORY_PATTERNS, {"default": "prefix/date"}),
+                "filename_date_format": (FILENAME_DATE_FORMATS, {"default": "none"}),
                 "quality": ("INT", {"default": 95, "min": 1, "max": 100, "step": 1}),
-                "subsampling": (_SUBSAMPLING_VALUES, {"default": "4:4:4"}),
+                "subsampling": (SUBSAMPLING_OPTIONS, {"default": "4:4:4"}),
                 "progressive": ("BOOLEAN", {"default": False}),
             },
             "optional": {
-                # Optional base output directory. Leave unconnected for ComfyUI/output.
-                # Absolute paths are used as-is. Relative paths are resolved under ComfyUI/output.
                 "output_dir": ("STRING", {"forceInput": True}),
-                # Optional generic label string. Connect ckpt_name_safe, experiment name, or any label.
                 "label": ("STRING", {"forceInput": True}),
-                # Optional JPEG comment. No text field; connect from a STRING node if needed.
                 "comment": ("STRING", {"forceInput": True}),
             },
         }
@@ -338,52 +326,64 @@ class GMImageJpegSave:
         label=None,
         comment=None,
     ):
-        now = datetime.datetime.now()
-        dir_date = now.strftime("%Y%m%d")
-        filename_date = _filename_date_text(now, filename_date_format)
+        now = datetime.now()
+        prefix_safe = _sanitize_path_part(filename_prefix, fallback="image")
+        label_safe = None
+        if label is not None and str(label).strip():
+            label_safe = _sanitize_path_part(label, fallback="label")
 
-        prefix_safe = _sanitize_name(filename_prefix, default="image")
-        label_raw = None if label is None else str(label).strip()
-        label_safe = _sanitize_name(label_raw, default="label") if label_raw else ""
+        dir_date_text = _build_dir_date_text(now)
+        file_date_text = _build_file_date_text(filename_date_format, now)
+        save_dir = _build_save_dir(output_dir, directory_pattern, prefix_safe, label_safe, dir_date_text)
+        stem = _build_filename_stem(prefix_safe, label_safe, file_date_text)
+        counter = _next_counter(save_dir, stem)
 
-        base_dir = _resolve_base_output_dir(output_dir)
-        dir_parts = _directory_parts(directory_pattern, prefix_safe, label_safe, dir_date)
-        save_dir = os.path.normpath(os.path.join(base_dir, *dir_parts))
-        os.makedirs(save_dir, exist_ok=True)
-
-        filename_stem = _build_filename_stem(prefix_safe, label_safe, filename_date)
-        counter = _next_counter(save_dir, filename_stem)
         gm_cmd = _resolve_gm_command()
+        sampling_factor = SUBSAMPLING_TO_GM[subsampling]
+        comment_text = _normalize_comment(comment)
+
+        pbar = _make_progress_bar(len(images))
 
         for image in images:
-            raw_rgb, width, height = _tensor_to_rgb_bytes(image)
+            filename = f"{stem}_{counter:0{COUNTER_WIDTH}d}{JPEG_EXTENSION}"
+            out_path = os.path.join(save_dir, filename)
 
-            while True:
-                filename = f"{filename_stem}_{counter:0{_COUNTER_WIDTH}d}{_JPEG_EXT}"
-                output_path = os.path.join(save_dir, filename)
-                counter += 1
-                if not os.path.exists(output_path):
-                    break
+            rgb_bytes, width, height = _tensor_to_rgb_bytes_and_size(image)
 
-            _run_graphicsmagick(
-                gm_cmd=gm_cmd,
-                raw_rgb=raw_rgb,
-                width=width,
-                height=height,
-                output_path=output_path,
-                quality=quality,
-                subsampling=subsampling,
-                progressive=progressive,
-                comment=comment,
+            cmd = [
+                gm_cmd,
+                "convert",
+                "-size",
+                f"{width}x{height}",
+                "-depth",
+                "8",
+                "rgb:-",
+                "-sampling-factor",
+                sampling_factor,
+                "-quality",
+                str(int(quality)),
+            ]
+            if progressive:
+                cmd += ["-interlace", "Plane"]
+            if comment_text:
+                cmd += ["-comment", comment_text]
+            cmd.append(out_path)
+
+            result = subprocess.run(
+                cmd,
+                input=rgb_bytes,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
+            if result.returncode != 0:
+                stderr_text = result.stderr.decode(errors="ignore").strip()
+                raise RuntimeError(
+                    f"GraphicsMagick failed while saving '{out_path}'.\n"
+                    f"Command: {' '.join(cmd)}\n"
+                    f"stderr: {stderr_text}"
+                )
+
+            counter += 1
+            pbar.update(1)
 
         return {}
-
-
-NODE_CLASS_MAPPINGS = {
-    "GMImageJpegSave": GMImageJpegSave,
-}
-
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "GMImageJpegSave": "GM Image JPEG Save",
-}
