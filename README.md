@@ -35,6 +35,16 @@ The node resolves GraphicsMagick in this order:
 
 If GraphicsMagick is available in PATH, no setting is needed.
 
+### Timeout
+
+GraphicsMagick is given a per-image timeout. The default is 300 seconds.
+
+To change it, set this environment variable before starting ComfyUI:
+
+```text
+GM_IMAGE_SAVER_TIMEOUT=300
+```
+
 ### Windows
 
 Install GraphicsMagick and enable the option to update PATH if available. After installing, restart ComfyUI so the updated PATH is visible.
@@ -78,6 +88,8 @@ If `output_dir` is unconnected or empty, ComfyUI's standard output directory is 
 If `output_dir` is a relative path, it is resolved under ComfyUI's standard output directory.
 
 If `output_dir` is an absolute path, it is used as-is.
+
+Generated directory/file components are sanitized. Hyphens are intentionally converted to underscores.
 
 ## Directory patterns
 
@@ -133,6 +145,12 @@ prefix/date/label   -> D:\ComfyJPEG\image\20260601\meinamix_v11
 ```
 
 Patterns containing `label` require a `label` input.
+
+## Naming compatibility
+
+Generated path parts are sanitized for filesystem safety, but hyphens are preserved.
+
+This keeps the `label` input compatible with tools such as HandpickerSuite's `ckpt_name_safe`, where names like `foo-model-v1` are expected to remain unchanged.
 
 ## Filename date formats
 

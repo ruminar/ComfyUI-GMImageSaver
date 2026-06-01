@@ -40,11 +40,7 @@ FILENAME_DATE_FORMATS = [
     "yyyyMMdd_HHmm",
 ]
 
-SUBSAMPLING_OPTIONS = [
-    "4:4:4",
-    "4:2:2",
-    "4:2:0",
-]
+SUBSAMPLING_OPTIONS = ["4:4:4", "4:2:2", "4:2:0"]
 
 # GraphicsMagick/ImageMagick-style JPEG sampling factors.
 SUBSAMPLING_TO_GM = {
@@ -55,7 +51,9 @@ SUBSAMPLING_TO_GM = {
 
 # Generated directory/file components are sanitized. output_dir itself is not
 # sanitized because it may be an absolute Windows path such as C:\foo\bar.
-INVALID_NAME_CHARS_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f\-]+')
+# Hyphen is intentionally converted to underscore to keep generated names
+# visually distinct from command-line options.
+INVALID_NAME_CHARS_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
 WHITESPACE_RE = re.compile(r"\s+")
 MULTI_UNDERSCORE_RE = re.compile(r"_+")
 MAX_PATH_PART_LENGTH = 120
@@ -63,6 +61,7 @@ MAX_FILENAME_STEM_LENGTH = 220
 MAX_JPEG_COMMENT_BYTES = 65000
 COUNTER_WIDTH = 4
 JPEG_EXTENSION = ".jpg"
+GM_TIMEOUT_SECONDS = int(os.environ.get("GM_IMAGE_SAVER_TIMEOUT", "300"))
 
 WINDOWS_RESERVED_NAMES = {
     "CON", "PRN", "AUX", "NUL",
@@ -103,6 +102,14 @@ def _resolve_gm_command() -> str:
     return "gm"
 
 
+def _avoid_windows_reserved_name(text: str) -> str:
+    # Windows device names are reserved even with extensions, e.g. CON.txt.
+    first_part = text.split(".", 1)[0].upper()
+    if first_part in WINDOWS_RESERVED_NAMES:
+        return f"_{text}_"
+    return text
+
+
 def _sanitize_path_part(value: Any, fallback: str = "unnamed") -> str:
     text = str(value if value is not None else "").strip()
     text = INVALID_NAME_CHARS_RE.sub("_", text)
@@ -113,21 +120,17 @@ def _sanitize_path_part(value: Any, fallback: str = "unnamed") -> str:
     if not text:
         text = fallback
 
-    # Avoid problematic Windows device names.
-    if text.upper() in WINDOWS_RESERVED_NAMES:
-        text = f"_{text}_"
-
     if len(text) > MAX_PATH_PART_LENGTH:
         text = text[:MAX_PATH_PART_LENGTH].rstrip("._ ") or fallback
 
-    return text
+    return _avoid_windows_reserved_name(text)
 
 
 def _limit_filename_stem(stem: str) -> str:
     stem = MULTI_UNDERSCORE_RE.sub("_", stem).strip("._ ") or "image"
     if len(stem) > MAX_FILENAME_STEM_LENGTH:
         stem = stem[:MAX_FILENAME_STEM_LENGTH].rstrip("._ ") or "image"
-    return stem
+    return _avoid_windows_reserved_name(stem)
 
 
 def _build_file_date_text(filename_date_format: str, now: datetime) -> str:
@@ -255,9 +258,23 @@ def _next_counter(save_dir: str, stem: str) -> int:
     return max_counter + 1
 
 
+def _make_unique_path(save_dir: str, stem: str, counter: int) -> Tuple[str, int]:
+    while True:
+        filename = f"{stem}_{counter:0{COUNTER_WIDTH}d}{JPEG_EXTENSION}"
+        out_path = os.path.join(save_dir, filename)
+        if not os.path.exists(out_path):
+            return out_path, counter
+        counter += 1
+
+
 def _tensor_to_rgb_bytes_and_size(image_tensor) -> Tuple[bytes, int, int]:
-    img = image_tensor.detach().cpu().numpy()
-    img = np.clip(img * 255.0, 0, 255).astype(np.uint8)
+    if hasattr(image_tensor, "detach"):
+        image_tensor = image_tensor.detach()
+    if hasattr(image_tensor, "cpu"):
+        image_tensor = image_tensor.cpu()
+
+    img = image_tensor.numpy() if hasattr(image_tensor, "numpy") else np.asarray(image_tensor)
+    img = np.asarray(img)
 
     if img.ndim != 3:
         raise RuntimeError(f"Expected image tensor with 3 dimensions (HWC), got shape {img.shape}")
@@ -272,13 +289,15 @@ def _tensor_to_rgb_bytes_and_size(image_tensor) -> Tuple[bytes, int, int]:
     else:
         raise RuntimeError(f"Expected 1, 3, or 4 channels, got shape {img.shape}")
 
+    img = np.clip(img * 255.0, 0, 255).astype(np.uint8)
+    img = np.ascontiguousarray(img)
     return img.tobytes(), int(width), int(height)
 
 
 def _normalize_comment(comment: Optional[str]) -> Optional[str]:
     if comment is None:
         return None
-    text = str(comment)
+    text = str(comment).replace("\x00", "")
     if not text:
         return None
     encoded = text.encode("utf-8")
@@ -286,6 +305,67 @@ def _normalize_comment(comment: Optional[str]) -> Optional[str]:
         encoded = encoded[:MAX_JPEG_COMMENT_BYTES]
         text = encoded.decode("utf-8", errors="ignore")
     return text
+
+
+def _run_graphicsmagick_jpeg(
+    gm_cmd: str,
+    rgb_bytes: bytes,
+    width: int,
+    height: int,
+    out_path: str,
+    quality: int,
+    sampling_factor: str,
+    progressive: bool,
+    comment_text: Optional[str],
+) -> None:
+    cmd = [
+        gm_cmd,
+        "convert",
+        "-size",
+        f"{width}x{height}",
+        "-depth",
+        "8",
+        "rgb:-",
+        "-sampling-factor",
+        sampling_factor,
+        "-quality",
+        str(int(quality)),
+    ]
+    if progressive:
+        cmd += ["-interlace", "Plane"]
+    if comment_text:
+        cmd += ["-comment", comment_text]
+    cmd.append(out_path)
+
+    try:
+        result = subprocess.run(
+            cmd,
+            input=rgb_bytes,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=GM_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "GraphicsMagick executable was not found. "
+            "Set the GM_PATH environment variable, or make sure 'gm' is available in PATH."
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"GraphicsMagick timed out after {GM_TIMEOUT_SECONDS} seconds while saving '{out_path}'. "
+            "Set GM_IMAGE_SAVER_TIMEOUT to a larger number if this image is unusually large."
+        ) from exc
+
+    if result.returncode != 0:
+        stderr_text = result.stderr.decode(errors="ignore").strip()
+        stdout_text = result.stdout.decode(errors="ignore").strip()
+        detail_text = stderr_text or stdout_text or "No output from GraphicsMagick."
+        raise RuntimeError(
+            f"GraphicsMagick failed while saving '{out_path}'.\n"
+            f"Command: {' '.join(cmd)}\n"
+            f"stderr/stdout: {detail_text}"
+        )
 
 
 class GMImageJpegSave:
@@ -341,49 +421,24 @@ class GMImageJpegSave:
         gm_cmd = _resolve_gm_command()
         sampling_factor = SUBSAMPLING_TO_GM[subsampling]
         comment_text = _normalize_comment(comment)
-
         pbar = _make_progress_bar(len(images))
 
         for image in images:
-            filename = f"{stem}_{counter:0{COUNTER_WIDTH}d}{JPEG_EXTENSION}"
-            out_path = os.path.join(save_dir, filename)
-
+            out_path, used_counter = _make_unique_path(save_dir, stem, counter)
             rgb_bytes, width, height = _tensor_to_rgb_bytes_and_size(image)
-
-            cmd = [
-                gm_cmd,
-                "convert",
-                "-size",
-                f"{width}x{height}",
-                "-depth",
-                "8",
-                "rgb:-",
-                "-sampling-factor",
-                sampling_factor,
-                "-quality",
-                str(int(quality)),
-            ]
-            if progressive:
-                cmd += ["-interlace", "Plane"]
-            if comment_text:
-                cmd += ["-comment", comment_text]
-            cmd.append(out_path)
-
-            result = subprocess.run(
-                cmd,
-                input=rgb_bytes,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+            _run_graphicsmagick_jpeg(
+                gm_cmd=gm_cmd,
+                rgb_bytes=rgb_bytes,
+                width=width,
+                height=height,
+                out_path=out_path,
+                quality=quality,
+                sampling_factor=sampling_factor,
+                progressive=progressive,
+                comment_text=comment_text,
             )
-            if result.returncode != 0:
-                stderr_text = result.stderr.decode(errors="ignore").strip()
-                raise RuntimeError(
-                    f"GraphicsMagick failed while saving '{out_path}'.\n"
-                    f"Command: {' '.join(cmd)}\n"
-                    f"stderr: {stderr_text}"
-                )
 
-            counter += 1
+            counter = used_counter + 1
             pbar.update(1)
 
         return {}
