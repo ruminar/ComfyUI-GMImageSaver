@@ -217,4 +217,4 @@ However, the initial node is intentionally narrow:
 
 ## License
 
-MIT
+GPL-3.0
