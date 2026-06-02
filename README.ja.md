@@ -201,3 +201,8 @@ VAE Decode / IMAGE
 ## 📄 ライセンス
 
 GPL-3.0（ComfyUI本体の掟に従っておるぞ！） じゃ。自由に、そして自己責任で使い倒すのじゃぞ！
+
+## 📣 宣伝画像
+
+<img width="1055" height="1491" alt="ComfyUI-GMImageSaver紹介ポスター" src="https://github.com/user-attachments/assets/a03078ea-2726-488f-a018-59b0c190ff39" />
+
