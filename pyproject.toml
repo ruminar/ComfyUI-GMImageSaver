@@ -1,0 +1,17 @@
+[project]
+name = "gm-image-saver"
+version = "0.1.0"
+description = "GraphicsMagick-based direct JPEG saver node for ComfyUI. JPEG-only, previewless, label-aware, and loosely coupled with HandpickerSuite workflows."
+license = { file = "LICENSE" }
+readme = "README.md"
+requires-python = ">=3.10"
+
+[project.urls]
+Repository = "https://github.com/ruminar/ComfyUI-GMImageSaver"
+Documentation = "https://github.com/ruminar/ComfyUI-GMImageSaver/blob/main/doc/HOW_TO_USE.md"
+"Bug Tracker" = "https://github.com/ruminar/ComfyUI-GMImageSaver/issues"
+
+[tool.comfy]
+PublisherId = "ruminar"
+DisplayName = "GM Image Saver"
+Icon = "https://github.com/ruminar/ComfyUI-GMImageSaver/main/icon.png"
