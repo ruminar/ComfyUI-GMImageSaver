@@ -377,8 +377,8 @@ class GMImageJpegSave:
                 "filename_prefix": ("STRING", {"default": "image"}),
                 "directory_pattern": (DIRECTORY_PATTERNS, {"default": "prefix/date"}),
                 "filename_date_format": (FILENAME_DATE_FORMATS, {"default": "none"}),
-                "quality": ("INT", {"default": 95, "min": 1, "max": 100, "step": 1}),
-                "subsampling": (SUBSAMPLING_OPTIONS, {"default": "4:4:4"}),
+                "quality": ("INT", {"default": 80, "min": 1, "max": 100, "step": 1}),
+                "subsampling": (SUBSAMPLING_OPTIONS, {"default": "4:2:2"}),
                 "progressive": ("BOOLEAN", {"default": False}),
             },
             "optional": {
