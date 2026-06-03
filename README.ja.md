@@ -71,8 +71,8 @@ sudo apt install graphicsmagick
 * `filename_prefix`: ファイル名の接頭辞（プレフィックス）。デフォルトは `image` じゃ。
 * `directory_pattern`: ディレクトリの構成パターン。デフォルトは `prefix/date` じゃ。
 * `filename_date_format`: ファイル名に付与する日付の書式。デフォルトは `none`（なし）じゃ。
-* `quality`: JPEGの品質（1〜100）。デフォルトは `95` じゃ。
-* `subsampling`: JPEGのクロマサブサンプリング。デフォルトは `4:4:4` じゃ。
+* `quality`: JPEGの品質（1〜100）。デフォルトは `80` じゃ。
+* `subsampling`: JPEGのクロマサブサンプリング。デフォルトは `4:2:2` じゃ。
 * `progressive`: プログレッシブJPEGにするか否か。デフォルトは `False` じゃ。
 
 **オプションピン（外部入力）:**

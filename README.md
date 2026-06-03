@@ -78,8 +78,8 @@ Required:
 - `filename_prefix`: filename prefix. Default `image`.
 - `directory_pattern`: directory layout pattern. Default `prefix/date`.
 - `filename_date_format`: optional date text in the filename. Default `none`.
-- `quality`: JPEG quality, default `95`
-- `subsampling`: JPEG chroma subsampling, default `4:4:4`
+- `quality`: JPEG quality, default `80`
+- `subsampling`: JPEG chroma subsampling, default `4:2:2`
 - `progressive`: progressive JPEG, default `False`
 
 Optional input pins:
