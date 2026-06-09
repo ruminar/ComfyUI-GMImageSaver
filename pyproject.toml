@@ -5,6 +5,7 @@ description = "GraphicsMagick-based direct JPEG saver node for ComfyUI. JPEG-onl
 license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.10"
+dependencies = []
 
 [project.urls]
 Repository = "https://github.com/ruminar/ComfyUI-GMImageSaver"
@@ -14,4 +15,4 @@ Documentation = "https://github.com/ruminar/ComfyUI-GMImageSaver/blob/main/doc/H
 [tool.comfy]
 PublisherId = "ruminar"
 DisplayName = "GM Image Saver"
-Icon = "https://github.com/ruminar/ComfyUI-GMImageSaver/main/icon.png"
+Icon = "https://raw.githubusercontent.com/ruminar/ComfyUI-GMImageSaver/main/icon.png"
