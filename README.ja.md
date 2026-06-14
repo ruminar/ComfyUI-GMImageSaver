@@ -35,32 +35,35 @@ ComfyUI用の、GraphicsMagickを用いた画像保存ノード群じゃ。
 
 **GraphicsMagick が必須じゃ。**
 
-- [GraphicsMagick official site](https://www.graphicsmagick.org/)
-- [GraphicsMagick Download](https://www.graphicsmagick.org/download.html)
-- [Windows Installation Notes](https://www.graphicsmagick.org/INSTALL-windows.html)
+- [GraphicsMagick official site](http://www.graphicsmagick.org/)
+- [GraphicsMagick Download](http://www.graphicsmagick.org/download.html)
+- [GraphicsMagick Windows Installation](http://www.graphicsmagick.org/INSTALL-windows.html)
+- [GraphicsMagick SourceForge files](https://sourceforge.net/projects/graphicsmagick/files/graphicsmagick/)
 
-このノードは、以下の順序で GraphicsMagick の実行パスを探すぞ。
+このノードを使うには、GraphicsMagick が別途インストールされており、ComfyUI から `gm` コマンドを実行できる状態になっている必要があるぞ。
 
-1. 環境変数 `GM_PATH`
-2. PATH に通っている `gm` コマンド
+インストール後、ComfyUI を起動しているターミナルやコマンドプロンプトで、次のコマンドが実行できることを確認しておくと安心じゃ。
 
-環境変数のPATHに GraphicsMagick が登録されておれば、特別な設定は不要じゃ。
+```bash
+gm version
+```
 
 ### Windows の場合
 
-GraphicsMagick をインストールし、インストーラーのオプションで「PATHを更新する」にチェックを入れるのじゃ。インストール後は、更新されたPATHを読み込ませるために ComfyUI を再起動するのじゃぞ。
+GraphicsMagick をインストールし、インストーラーで `gm` コマンドを利用できるようにするオプションを有効にするのじゃ。
+インストール後は、ComfyUI をいったん終了してから再起動するのじゃぞ。
 
-もしPATHを通せない事情があるなら、環境変数 `GM_PATH` に `gm.exe` のフルパスを直接設定してやれ。
-例: `C:\Program Files\GraphicsMagick-1.3.45-Q16\gm.exe`
+`gm version` が実行できれば準備完了じゃ。
 
 ### Linux の場合
 
-お使いのディストリビューションのパッケージマネージャーから GraphicsMagick をインストールし、ターミナルで `gm` コマンドが使える状態にしておくのじゃ。
+お使いのディストリビューションのパッケージマネージャーから GraphicsMagick をインストールし、`gm` コマンドが使える状態にしておくのじゃ。
+
 Debian / Ubuntu の例:
 
 ```bash
 sudo apt install graphicsmagick
-
+gm version
 ```
 
 ## 🎛️ 入力 (Inputs)
