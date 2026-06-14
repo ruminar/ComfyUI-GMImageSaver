@@ -1,6 +1,6 @@
 [project]
 name = "gm-image-saver"
-version = "0.1.0"
+version = "0.1.1"
 description = "GraphicsMagick-based direct JPEG saver node for ComfyUI. JPEG-only, previewless, label-aware, and loosely coupled with HandpickerSuite workflows."
 license = { file = "LICENSE" }
 readme = "README.md"
