@@ -3,3 +3,4 @@ data/checkpoint_favorites.json
 __pycache__/
 *.pyc
 .vscode/settings.json
+.ruff_cache/
