@@ -1,7 +1,7 @@
 [project]
 name = "gm-image-saver"
 version = "0.1.1"
-description = "GraphicsMagick-based direct JPEG saver node for ComfyUI. JPEG-only, previewless, label-aware, and loosely coupled with HandpickerSuite workflows."
+description = "Create missing OGN-ModelManager checkpoint thumbnails from existing generated images associated with each checkpoint. Intended for HandpickerSuite / GM Image Saver workflows."
 license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.10"
