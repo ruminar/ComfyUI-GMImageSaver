@@ -1,108 +1,100 @@
 # ComfyUI-GMImageSaver
 
-GraphicsMagick-based output saver nodes for ComfyUI.
+ComfyUI用の、GraphicsMagickを用いた画像保存ノード群です。
 
-The initial node, **GM Image JPEG Save**, is an output-only JPEG saver. It saves ComfyUI `IMAGE` tensors directly as JPEG using GraphicsMagick, without creating intermediate PNG files and without returning preview images.
+最初のノード **GM Image JPEG Save** は、出力専用のJPEG保存ノードです。  
+最大の特徴は、**中間PNGファイルを作らず、ComfyUIの `IMAGE` テンソルから直接GraphicsMagickへ流し込んでJPEG化する**ことです。プレビューも返さず、余計なI/Oを減らしたJPEG特化ノードです。
 
-## Node
+## このノードの強み
+
+- **SSDに優しいダイレクト変換**  
+  中間PNGを書き出さず、`IMAGE` テンソルを直接GraphicsMagickへ渡すため、余計なディスクI/Oを抑えられます。
+
+- **モデル名で自動仕分け**  
+  `label` ピンにCheckpoint名（`ckpt_name_safe` など）を繋げば、画像ファイル名やフォルダ名に自動で付与できます。
+
+- **賢いディレクトリ生成**  
+  `directory_pattern` を選ぶだけで、整理されたディレクトリ構造へ保存できます。
+
+- **自由な出力先パス**  
+  ComfyUI標準の出力フォルダだけでなく、任意の場所へ直接保存できます。
+
+- **あえてのGraphicsMagick採用**  
+  多機能で重厚なImageMagickではなく、このノードでは軽量かつ堅牢なGraphicsMagickをコアに据えています。きのこたけのこ論争で「きのこ派」を貫くような、少数派ながらも渋い玄人に深く刺さるチョイスです。
+
+## ノード詳細
 
 ### GM Image JPEG Save
 
-A deliberately narrow JPEG saver node.
+「ただひたすらにJPEGを保存する」ことに特化した、意図的に機能を絞り込んだノードです。
 
-It does **not** try to be a general image saver.
+- JPEG専用
+- プレビュー出力なし
+- `IMAGE` のパススルーなし
+- フロントエンドや localStorage への依存なし
+- HandpickerSuite への直接的な依存なし
+- 入力ピン経由でのみ、任意のJPEGコメントを追加可能
+- `label` 入力ピンを用いた、ファイル・ディレクトリの柔軟な命名
+- 画像が保存されるごとに、ComfyUIのプログレスバーを更新
 
-- JPEG only
-- No PNG output
-- No preview output
-- No `IMAGE` passthrough
-- No frontend/localStorage dependency
-- No HandpickerSuite dependency
-- Optional JPEG comment via input pin only
-- Optional `label` input pin for filename/directory naming
-- Image-by-image progress bar updates
+PNGで保存したい時は、ComfyUI標準の Save Image ノードを使ってください。
 
-For PNG output, use ComfyUI's standard Save Image node.
+## 動作要件
 
-## Requirements
+**GraphicsMagick が必須です。**
 
-GraphicsMagick is required.
-
-Download GraphicsMagick from the official site:
-
-- [GraphicsMagick Download](https://www.graphicsmagick.org/download.html)
-- [Windows Installation Notes](https://www.graphicsmagick.org/INSTALL-windows.html)
-
-GM Image JPEG Save resolves GraphicsMagick in this order:
-
-1. `GM_PATH` environment variable
-2. `gm` from PATH
-
-If GraphicsMagick is available in PATH, no setting is needed.
-
-### Timeout
-
-GraphicsMagick is given a per-image timeout. The default is 300 seconds.
-
-To change it, set this environment variable before starting ComfyUI:
-
-```text
-GM_IMAGE_SAVER_TIMEOUT=300
-```
+このノードは `gm` コマンドを呼び出してJPEG保存を行います。  
+GraphicsMagickをインストールし、ComfyUIから `gm` を実行できる状態にしてください。インストール後は ComfyUI を再起動してください。
 
 ### Windows
 
-Install GraphicsMagick and enable the option to update PATH if available. After installing, restart ComfyUI so the updated PATH is visible.
-
-If PATH is not available, set the `GM_PATH` environment variable to the full path of `gm.exe`, for example:
+GraphicsMagick をインストールし、コマンドラインツールを有効にしてください。  
+インストール後、PowerShellやコマンドプロンプトで以下が実行できることを確認してください。
 
 ```text
-C:\Program Files\GraphicsMagick-1.3.45-Q16\gm.exe
+gm version
 ```
+
+その後、ComfyUI を再起動してください。
 
 ### Linux
 
-Install GraphicsMagick using your distribution package manager and make sure `gm` is available in PATH.
+お使いのディストリビューションのパッケージマネージャーから GraphicsMagick をインストールしてください。
 
-For example, on Debian / Ubuntu:
+Debian / Ubuntu の例:
 
 ```bash
 sudo apt install graphicsmagick
+gm version
 ```
 
-## Inputs
+## 入力
 
-Required:
+必須ピン:
 
-- `images`: ComfyUI `IMAGE`
-- `filename_prefix`: filename prefix. Default `image`.
-- `directory_pattern`: directory layout pattern. Default `prefix/date`.
-- `filename_date_format`: optional date text in the filename. Default `none`.
-- `quality`: JPEG quality, default `95`
-- `subsampling`: JPEG chroma subsampling, default `4:4:4`
-- `progressive`: progressive JPEG, default `False`
+- `images`: ComfyUIの `IMAGE` テンソル
+- `filename_prefix`: ファイル名の接頭辞。デフォルトは `image`
+- `directory_pattern`: ディレクトリの構成パターン。デフォルトは `prefix/date`
+- `filename_date_format`: ファイル名に付与する日付の書式。デフォルトは `none`
+- `quality`: JPEGの品質（1〜100）。デフォルトは `80`
+- `subsampling`: JPEGのクロマサブサンプリング。デフォルトは `4:2:2`
+- `progressive`: プログレッシブJPEGにするか否か。デフォルトは `False`
 
-Optional input pins:
+オプションピン:
 
-- `output_dir`: base output directory. Connect from a string/text node.
-- `label`: optional extra naming string. You can connect `ckpt_name_safe` or any other label string.
-- `comment`: JPEG comment string. Connect from a string/text node.
+- `output_dir`: 出力先のベースディレクトリ。文字列ノードから接続してください。
+- `label`: 追加の命名用ラベル。`ckpt_name_safe` などを接続できます。
+- `comment`: JPEGに埋め込むコメント文。文字列ノードから接続してください。
 
-If `output_dir` is unconnected or empty, ComfyUI's standard output directory is used.
+`output_dir` が未接続、または空欄の場合は、ComfyUI標準の output ディレクトリが使われます。  
+相対パスを指定した場合は標準outputディレクトリの配下に、絶対パスを指定した場合はその場所に直接保存されます。
 
-If `output_dir` is a relative path, it is resolved under ComfyUI's standard output directory.
+## ディレクトリパターン
 
-If `output_dir` is an absolute path, it is used as-is.
+`directory_pattern` は、`output_dir` の下に作られるフォルダ構造を決定します。  
+`date` 部分は常に `yyyyMMdd` 形式です。
 
-Generated directory/file components are sanitized. Hyphens are intentionally converted to underscores.
-
-## Directory patterns
-
-`directory_pattern` controls folders under `output_dir`.
-
-The `date` part is always `yyyyMMdd`.
-
-Available patterns:
+選択可能なパターン:
 
 ```text
 none
@@ -121,7 +113,7 @@ prefix_date_label
 prefix/date/label
 ```
 
-Example values:
+出力例:
 
 ```text
 output_dir: D:\ComfyJPEG
@@ -129,8 +121,6 @@ filename_prefix: image
 label: meinamix_v11
 date: 20260601
 ```
-
-Results:
 
 ```text
 none                -> D:\ComfyJPEG
@@ -149,19 +139,13 @@ prefix_date_label   -> D:\ComfyJPEG\image_20260601_meinamix_v11
 prefix/date/label   -> D:\ComfyJPEG\image\20260601\meinamix_v11
 ```
 
-Patterns containing `label` require a `label` input.
+`label` を含むパターンを選んだ場合は、必ず `label` ピンに文字列を接続してください。
 
-## Naming compatibility
+## ファイル名の日付フォーマット
 
-Generated path parts are sanitized for filesystem safety, but hyphens are preserved.
+`filename_date_format` は、ファイル名そのものに刻まれる日付を制御します。ディレクトリとは別です。
 
-This keeps the `label` input compatible with tools such as HandpickerSuite's `ckpt_name_safe`, where names like `foo-model-v1` are expected to remain unchanged.
-
-## Filename date formats
-
-`filename_date_format` controls date text in the filename, not the directory.
-
-Available values:
+選択可能な値:
 
 ```text
 none
@@ -169,9 +153,9 @@ yyyyMMdd
 yyyyMMdd_HHmm
 ```
 
-The counter is four digits.
+連番は常に4桁です。
 
-Examples:
+出力例:
 
 ```text
 image_0001.jpg
@@ -181,21 +165,14 @@ image_meinamix_v11_0001.jpg
 image_meinamix_v11_20260601_1423_0001.jpg
 ```
 
-If `label` is connected, it is included in the filename automatically.
+`label` ピンが接続されている場合は、ファイル名にも組み込まれます。  
+タイムスタンプはノード実行時に1回だけ固定されるため、同じバッチ内で生成された画像は同じ時刻のファイル名になります。
 
-The timestamp is fixed once per node execution, so images in the same batch use the same timestamp.
+## プレビューに関するポリシー
 
-## Progress
+このノードは意図的にプレビュー画像を返しません。
 
-The node updates ComfyUI's progress bar once per successfully saved image.
-
-## Preview policy
-
-This node intentionally does not return preview images.
-
-For previews, branch the `IMAGE` before this node and connect it to your preferred preview node.
-
-Example:
+プレビューを見たい場合は、このノードの直前で `IMAGE` テンソルを分岐させ、お好みのプレビュー専用ノードへ接続してください。
 
 ```text
 VAE Decode / IMAGE
@@ -203,18 +180,36 @@ VAE Decode / IMAGE
   └─ GM Image JPEG Save
 ```
 
+## 棚卸し用途の画質設定
+
+初期設定は高品質寄りです。
+
+```text
+quality: 95
+subsampling: 4:4:4
+```
+
+大量生成後の棚卸し用途でファイルサイズを抑えたい場合は、以下のような設定も有効です。
+
+```text
+quality: 75〜85
+subsampling: 4:2:0
+```
+
+お気に入りCheckpointを絞り込んだ後、`quality: 95` / `subsampling: 4:4:4` などへ上げて再保存する運用もおすすめです。
+
 ## Project scope
 
-This repository is named **GMImageSaver** so that additional GraphicsMagick-based saver nodes can be added in the future.
+このリポジトリは、将来的に GraphicsMagick を用いた他の保存系ノードを追加できるように **GMImageSaver** という名前にしています。
 
-However, the initial node is intentionally narrow:
+ただし、今回の初期ノードはあえて「狭い」機能を追求しています。
 
-- JPEG only
-- no preview
-- no PNG support
-- no automatic metadata injection
-- no external project coupling
+- JPEG保存のみ
+- プレビューなし
+- PNGサポートなし
+- メタデータの自動注入なし
+- 外部プロジェクトとの強制的な結合なし
 
 ## License
 
-MIT
+GPL-3.0
