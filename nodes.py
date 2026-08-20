@@ -2,6 +2,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 from datetime import datetime
 from pathlib import PurePath
 from typing import Any, List, Optional, Tuple
@@ -51,6 +52,9 @@ SUBSAMPLING_TO_GM = {
 
 INVALID_NAME_CHARS_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
 WHITESPACE_RE = re.compile(r"\s+")
+UNSAFE_COMMENT_CHARS_RE = re.compile(
+    r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\ud800-\udfff]"
+)
 MAX_NAME_COMPONENT_LENGTH = 120
 MAX_FILENAME_STEM_LENGTH = 220
 MAX_JPEG_COMMENT_BYTES = 65000
@@ -292,19 +296,56 @@ def _tensor_to_rgb_bytes_and_size(image_tensor) -> Tuple[bytes, int, int]:
     return img.tobytes(), width, height
 
 
-def _normalize_comment(comment: Optional[str]) -> Optional[str]:
+def _normalize_comment_bytes(comment: Optional[str]) -> Optional[bytes]:
     if comment is None:
         return None
-    text = str(comment)
+
+    text = str(comment).replace("\ufeff", "")
+    text = UNSAFE_COMMENT_CHARS_RE.sub("", text)
     if not text:
         return None
 
     encoded = text.encode("utf-8")
     if len(encoded) > MAX_JPEG_COMMENT_BYTES:
         encoded = encoded[:MAX_JPEG_COMMENT_BYTES]
-        text = encoded.decode("utf-8", errors="ignore")
+        encoded = encoded.decode("utf-8", errors="ignore").encode("utf-8")
 
-    return text
+    return encoded or None
+
+
+def _write_temp_comment_file(comment_bytes: bytes) -> str:
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            prefix="gm_image_saver_comment_",
+            suffix=".txt",
+            delete=False,
+        ) as temp_file:
+            temp_path = temp_file.name
+            temp_file.write(comment_bytes)
+        return temp_path
+    except BaseException:
+        if temp_path:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+        raise
+
+
+def _remove_temp_comment_file(temp_path: Optional[str]) -> None:
+    if not temp_path:
+        return
+    try:
+        os.unlink(temp_path)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        print(
+            "GM Image Saver warning: failed to remove temporary comment file "
+            f"'{temp_path}': {exc}"
+        )
 
 
 class GMImageJpegSave:
@@ -368,64 +409,71 @@ class GMImageJpegSave:
 
         gm_cmd = _resolve_gm_command()
         sampling_factor = SUBSAMPLING_TO_GM[subsampling]
-        comment_text = _normalize_comment(comment)
+        comment_bytes = _normalize_comment_bytes(comment)
         pbar = _make_progress_bar(len(images))
 
-        for image in images:
-            filename = f"{stem}_{counter:04}{JPEG_EXTENSION}"
-            out_path = os.path.join(save_dir, filename)
-            rgb_bytes, width, height = _tensor_to_rgb_bytes_and_size(image)
+        comment_file_path = None
+        try:
+            if comment_bytes:
+                comment_file_path = _write_temp_comment_file(comment_bytes)
 
-            cmd = [
-                gm_cmd,
-                "convert",
-                "-size",
-                f"{width}x{height}",
-                "-depth",
-                "8",
-                "rgb:-",
-                "-sampling-factor",
-                sampling_factor,
-                "-quality",
-                str(int(quality)),
-            ]
+            for image in images:
+                filename = f"{stem}_{counter:04}{JPEG_EXTENSION}"
+                out_path = os.path.join(save_dir, filename)
+                rgb_bytes, width, height = _tensor_to_rgb_bytes_and_size(image)
 
-            if progressive:
-                cmd += ["-interlace", "Plane"]
+                cmd = [
+                    gm_cmd,
+                    "convert",
+                    "-size",
+                    f"{width}x{height}",
+                    "-depth",
+                    "8",
+                    "rgb:-",
+                    "-sampling-factor",
+                    sampling_factor,
+                    "-quality",
+                    str(int(quality)),
+                ]
 
-            if comment_text:
-                cmd += ["-comment", comment_text]
+                if progressive:
+                    cmd += ["-interlace", "Plane"]
 
-            cmd.append(out_path)
+                if comment_file_path:
+                    cmd += ["-comment", f"@{comment_file_path}"]
 
-            try:
-                result = subprocess.run(
-                    cmd,
-                    input=rgb_bytes,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    timeout=GM_TIMEOUT_SECONDS,
-                    shell=False,
-                )
-            except subprocess.TimeoutExpired as exc:
-                raise RuntimeError(
-                    f"GraphicsMagick timed out after {GM_TIMEOUT_SECONDS} seconds "
-                    f"while saving '{out_path}'."
-                ) from exc
-            except OSError as exc:
-                raise RuntimeError(
-                    "Failed to execute GraphicsMagick. "
-                    "Please install GraphicsMagick and restart ComfyUI."
-                ) from exc
+                cmd.append(out_path)
 
-            if result.returncode != 0:
-                stderr_text = result.stderr.decode(errors="ignore").strip()
-                raise RuntimeError(
-                    f"GraphicsMagick failed while saving '{out_path}'.\n"
-                    f"stderr: {stderr_text}"
-                )
+                try:
+                    result = subprocess.run(
+                        cmd,
+                        input=rgb_bytes,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        timeout=GM_TIMEOUT_SECONDS,
+                        shell=False,
+                    )
+                except subprocess.TimeoutExpired as exc:
+                    raise RuntimeError(
+                        f"GraphicsMagick timed out after {GM_TIMEOUT_SECONDS} seconds "
+                        f"while saving '{out_path}'."
+                    ) from exc
+                except OSError as exc:
+                    raise RuntimeError(
+                        f"Failed to execute GraphicsMagick while saving '{out_path}'. "
+                        f"OS error: {exc}"
+                    ) from exc
 
-            counter += 1
-            pbar.update(1)
+                if result.returncode != 0:
+                    stderr_text = result.stderr.decode(errors="ignore").strip()
+                    raise RuntimeError(
+                        f"GraphicsMagick failed while saving '{out_path}'.\n"
+                        f"stderr: {stderr_text}"
+                    )
+
+                counter += 1
+                pbar.update(1)
+        finally:
+            _remove_temp_comment_file(comment_file_path)
 
         return {}

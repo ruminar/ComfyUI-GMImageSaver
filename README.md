@@ -86,6 +86,8 @@ gm version
 - `label`: 追加の命名用ラベル。`ckpt_name_safe` などを接続できます。
 - `comment`: JPEGに埋め込むコメント文。文字列ノードから接続してください。
 
+`comment` はUTF-8（BOMなし）の一時ファイル経由でGraphicsMagickへ渡されます。NULなどJPEGコメントに不要な制御文字は除去され、一時ファイルは処理後に削除されます。
+
 `output_dir` が未接続、または空欄の場合は、ComfyUI標準の output ディレクトリが使われます。  
 相対パスを指定した場合は標準outputディレクトリの配下に、絶対パスを指定した場合はその場所に直接保存されます。
 
