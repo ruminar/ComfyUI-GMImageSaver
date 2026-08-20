@@ -9,7 +9,7 @@ dependencies = []
 
 [project.urls]
 Repository = "https://github.com/ruminar/ComfyUI-GMImageSaver"
-Documentation = "https://github.com/ruminar/ComfyUI-GMImageSaver/blob/main/doc/HOW_TO_USE.md"
+Documentation = "https://github.com/ruminar/ComfyUI-GMImageSaver/blob/main/README.md"
 "Bug Tracker" = "https://github.com/ruminar/ComfyUI-GMImageSaver/issues"
 
 [tool.comfy]

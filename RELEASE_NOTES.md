@@ -25,6 +25,13 @@ GraphicsMagick normalizes line endings read from a comment file to CRLF and appe
 
 The agreed behavior and regression requirements are documented in `.spec/comment-handling.md` and covered by automated tests.
 
+## Documentation
+
+* Rebuilt `README.md` as the English documentation.
+* Rebuilt `README.ja.md` as the corresponding Japanese documentation.
+* Added language navigation links and synchronized both documents with the current implementation.
+* Corrected the project description and documentation URL in `pyproject.toml`.
+
 ## Compatibility
 
 Existing workflows remain compatible. The node inputs, outputs, directory behavior, filename behavior, JPEG settings, and previewless output behavior are unchanged.

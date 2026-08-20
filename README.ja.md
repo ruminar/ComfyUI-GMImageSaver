@@ -1,100 +1,103 @@
 # ComfyUI-GMImageSaver
 
-ComfyUI用の、GraphicsMagickを用いた画像保存ノード群じゃ。
+[English](README.md) | [日本語](README.ja.md)
 
-記念すべき最初のノード **GM Image JPEG Save** は、出力専用のJPEG保存ノードじゃぞ。
-最大の特徴は、**中間PNGファイルを作らず、ComfyUIの `IMAGE` テンソルから直接GraphicsMagickへ流し込んでJPEG化する**ことじゃ。プレビューも出さず、余計なI/Oを極限まで削ぎ落とした研ぎ澄まされた刃となっておる。
+ComfyUI用の、GraphicsMagickを利用した画像保存ノードです。
 
-## 🌟 このノードの強み（アピールポイント）
+最初に収録されている **GM Image JPEG Save** は、JPEG保存に特化した出力ノードです。ComfyUIの `IMAGE` テンソルを中間PNGファイルへ書き出さず、GraphicsMagickへ直接ストリーミングしてJPEGへ変換します。プレビューや画像のパススルー出力は意図的に返しません。
 
-* **SSDに優しいダイレクト変換:** 一度PNGとして保存するような野暮なことはせぬ。生データを直接パイプで送り込むため、高速かつおぬしのSSDの寿命に極めて優しいエコな設計じゃ。
-* **モデル名で自動仕分け:** `label` ピンにCheckpoint名（`ckpt_name_safe` など）を繋げば、画像ファイル名やフォルダ名に自動で付与できるぞ。
-* **賢いディレクトリ生成:** パターンを選ぶだけで、必要なフォルダを自動で掘って整理整頓してくれるのじゃ。
-* **自由な出力先パス:** ComfyUI標準の出力フォルダだけでなく、任意の場所（絶対パス）へ直接保存可能じゃ。
-* **あえてのGraphicsMagick採用:** 多機能で重厚なImageMagickではなく、軽量かつ堅牢なGraphicsMagickをコアに据えたぞ。きのこたけのこ論争で「きのこ派」を貫くような、渋い玄人に深く刺さるチョイスじゃな！
+## 特長
 
-## 📦 ノード詳細
+- GraphicsMagickによるテンソルからJPEGへの直接変換
+- 中間PNGファイルを作成しないため、不要なディスクI/Oを削減
+- JPEG専用、プレビューなしの出力ノード
+- JPEG品質、クロマサブサンプリング、プログレッシブ形式を設定可能
+- ファイル名やディレクトリ名へ任意のラベルを追加可能
+- 日付、プレフィックス、ラベルを組み合わせたディレクトリ構成
+- 任意の出力先ディレクトリに対応
+- 長いプロンプトを含むUTF-8のJPEGコメントに対応
+- 画像ごとにComfyUIのプログレスバーを更新
+- フロントエンド、localStorage、HandpickerSuiteへの直接依存なし
 
-### GM Image JPEG Save
+オプションの `label` 入力には `ckpt_name_safe` などのCheckpoint名を接続できます。HandpickerSuite自体へ依存せず、疎結合なワークフローを構成できます。
 
-「ただひたすらにJPEGを保存する」ことに特化した、意図的に機能を絞り込んだノードじゃ。
-汎用的な画像保存ノードを目指したものではない点に留意するのじゃぞ。
+## 動作要件
 
-* JPEG専用（PNG出力はせぬ！）
-* プレビュー出力なし
-* `IMAGE` のパススルー（通過）なし
-* フロントエンドや localStorage への依存なし
-* HandpickerSuite への直接的な依存なし（疎結合じゃ！）
-* 入力ピン経由でのみ、任意のJPEGコメントを追加可能
-* `label` 入力ピンを用いた、ファイル・ディレクトリの柔軟な命名
-* 画像が保存されるごとに、ComfyUIのプログレスバーをしっかり更新するぞ
+GraphicsMagickを別途インストールし、ComfyUIを起動する環境の `PATH` から `gm` コマンドを実行できるようにしてください。
 
-※PNGで保存したい時は、ComfyUI標準の Save Image ノードを使うのじゃ。
+次のコマンドで確認できます。
 
-## ⚙️ 動作要件 (Requirements)
-
-**GraphicsMagick が必須じゃ。**
-
-- [GraphicsMagick official site](http://www.graphicsmagick.org/)
-- [GraphicsMagick Download](http://www.graphicsmagick.org/download.html)
-- [GraphicsMagick Windows Installation](http://www.graphicsmagick.org/INSTALL-windows.html)
-- [GraphicsMagick SourceForge files](https://sourceforge.net/projects/graphicsmagick/files/graphicsmagick/)
-
-このノードを使うには、GraphicsMagick が別途インストールされており、ComfyUI から `gm` コマンドを実行できる状態になっている必要があるぞ。
-
-インストール後、ComfyUI を起動しているターミナルやコマンドプロンプトで、次のコマンドが実行できることを確認しておくと安心じゃ。
-
-```bash
+```text
 gm version
 ```
 
-### Windows の場合
+GraphicsMagickのインストール後や `PATH` の変更後は、ComfyUIを再起動してください。
 
-GraphicsMagick をインストールし、インストーラーで `gm` コマンドを利用できるようにするオプションを有効にするのじゃ。
-インストール後は、ComfyUI をいったん終了してから再起動するのじゃぞ。
+### Windows
 
-`gm version` が実行できれば準備完了じゃ。
+コマンドラインツールを有効にしてGraphicsMagickをインストールします。ComfyUIを起動する環境と同じPowerShellまたはコマンドプロンプトで、`gm version` が成功することを確認してください。
 
-### Linux の場合
+### Linux
 
-お使いのディストリビューションのパッケージマネージャーから GraphicsMagick をインストールし、`gm` コマンドが使える状態にしておくのじゃ。
-
-Debian / Ubuntu の例:
+ディストリビューションのパッケージマネージャーからGraphicsMagickをインストールします。DebianまたはUbuntuの場合：
 
 ```bash
 sudo apt install graphicsmagick
 gm version
 ```
 
-## 🎛️ 入力 (Inputs)
+## インストール
 
-**必須ピン:**
+このリポジトリをComfyUIの `custom_nodes` ディレクトリへクローンし、ComfyUIを再起動してください。
 
-* `images`: ComfyUIの `IMAGE` テンソルじゃ。
-* `filename_prefix`: ファイル名の接頭辞（プレフィックス）。デフォルトは `image` じゃ。
-* `directory_pattern`: ディレクトリの構成パターン。デフォルトは `prefix/date` じゃ。
-* `filename_date_format`: ファイル名に付与する日付の書式。デフォルトは `none`（なし）じゃ。
-* `quality`: JPEGの品質（1〜100）。デフォルトは `80` じゃ。
-* `subsampling`: JPEGのクロマサブサンプリング。デフォルトは `4:2:2` じゃ。
-* `progressive`: プログレッシブJPEGにするか否か。デフォルトは `False` じゃ。
+```bash
+cd ComfyUI/custom_nodes
+git clone https://github.com/ruminar/ComfyUI-GMImageSaver.git
+```
 
-**オプションピン（外部入力）:**
+## ノード：GM Image JPEG Save
 
-* `output_dir`: 出力先のベースディレクトリじゃ。文字列(String)ノードから繋ぐのじゃ。
-* `label`: 追加の命名用ラベルじゃ。ここに `ckpt_name_safe` などの文字列を繋ぐと良いぞ。
-* `comment`: JPEGに埋め込むコメント文じゃ。文字列(String)ノードから繋ぐのじゃ。
+JPEGファイルの保存のみを行うノードです。プレビューや入力画像のパススルーは返しません。プレビューが必要な場合は、画像テンソルを別のPreview Imageノードへ分岐してください。
 
-`comment` はUTF-8（BOMなし）の一時ファイル経由でGraphicsMagickへ渡されるぞ。NULなどJPEGコメントに不要な制御文字は除去され、一時ファイルは処理後に削除される仕様じゃ。
+### 必須入力
 
-`output_dir` が未接続、または空欄の場合は、ComfyUI標準の output ディレクトリが使われるぞ。
-相対パスを指定した場合は標準outputディレクトリの配下に、絶対パスを指定した場合はその場所に直接保存される仕様じゃ。
+- `images`: ComfyUIの `IMAGE` テンソルまたは画像バッチ
+- `filename_prefix`: ファイル名の接頭辞。既定値：`image`
+- `directory_pattern`: ディレクトリ構成。既定値：`prefix/date`
+- `filename_date_format`: ファイル名へ付加する日付形式。既定値：`none`
+- `quality`: 1～100のJPEG品質。既定値：`80`
+- `subsampling`: クロマサブサンプリング。既定値：`4:2:2`
+- `progressive`: プログレッシブJPEGを有効にするか。既定値：`False`
 
-## 📁 ディレクトリパターン (Directory patterns)
+### オプション入力
 
-`directory_pattern` は、`output_dir` の下に作られるフォルダ構造を決定するぞ。
-`date`（日付）部分は常に `yyyyMMdd` 形式じゃ。
+- `output_dir`: 文字列ノードから接続する出力先のベースディレクトリ
+- `label`: Checkpoint名など、ファイル名とディレクトリ名へ追加するラベル
+- `comment`: JPEGのコメント領域へ保存する文字列
 
-**選択可能なパターン:**
+`output_dir` が未接続または空の場合は、ComfyUI標準のoutputディレクトリを使用します。相対パスは標準outputディレクトリの配下として解決され、絶対パスはその場所を直接使用します。親ディレクトリへの移動（`..`）を含む相対パスは拒否されます。
+
+## JPEGコメントの処理
+
+空でない `comment` が指定された場合、バッチごとにUTF-8の一時ファイルを1つ作り、GraphicsMagickへ `-comment @<ファイル>` の形式で渡します。これにより、GraphicsMagickのコマンドライン引数長制限や、Windowsの文字コード変換・コマンドライン長の問題を回避します。
+
+- 一時ファイルはUTF-8、BOMなしで書き込みます。
+- BOM文字、NUL文字、不要な制御文字、不正なUnicodeサロゲート文字を除去します。
+- タブ、LF、CR、日本語、アクセント付き文字、絵文字は保持します。
+- コメントはUTF-8で最大65,000バイトとし、正しい文字境界で切り詰めます。
+- 同じバッチの全画像で同じ一時ファイルを再利用します。
+- 正常終了、失敗、タイムアウトのいずれでも削除を試みます。
+- コメントが未設定、空、または正規化後に空となる場合は一時ファイルを作りません。
+
+GraphicsMagickはファイルから読み込んだコメントの改行をCRLFへ正規化し、末尾にもCRLFを追加します。行構造は保持されますが、入力とJPEG内コメントの完全なバイト一致は保証されません。
+
+詳細な決定事項は [`.spec/comment-handling.md`](.spec/comment-handling.md) に記録しています。
+
+## ディレクトリパターン
+
+`directory_pattern` は、`output_dir` の下に作成するディレクトリ構成を指定します。日付ディレクトリは常に `yyyyMMdd` 形式です。
+
+選択可能なパターン：
 
 ```text
 none
@@ -111,20 +114,18 @@ prefix_label_date
 prefix/label/date
 prefix_date_label
 prefix/date/label
-
 ```
 
-**出力例:**
+入力例：
 
 ```text
 output_dir: D:\ComfyJPEG
 filename_prefix: image
 label: meinamix_v11
 date: 20260601
-
 ```
 
-上記の設定で動かした場合の結果じゃ:
+生成されるディレクトリ：
 
 ```text
 none                -> D:\ComfyJPEG
@@ -141,27 +142,21 @@ prefix_label_date   -> D:\ComfyJPEG\image_meinamix_v11_20260601
 prefix/label/date   -> D:\ComfyJPEG\image\meinamix_v11\20260601
 prefix_date_label   -> D:\ComfyJPEG\image_20260601_meinamix_v11
 prefix/date/label   -> D:\ComfyJPEG\image\20260601\meinamix_v11
-
 ```
 
-※ `label` を含むパターンを選んだ場合は、必ず `label` ピンに何かを接続するのじゃぞ！
+`label` を含むパターンを使用する場合は、空でない `label` 入力が必要です。
 
-## 📅 ファイル名の日付フォーマット
+## ファイル名の日付形式
 
-`filename_date_format` は、ファイル名そのものに刻まれる日付を制御するぞ（ディレクトリとは別じゃ）。
-
-**選択可能な値:**
+`filename_date_format` は、ディレクトリパターンとは独立してファイル名へ追加する日付部分を指定します。
 
 ```text
 none
 yyyyMMdd
 yyyyMMdd_HHmm
-
 ```
 
-連番（カウンター）は常に4桁で付与されるぞ。
-
-**出力例:**
+出力例：
 
 ```text
 image_0001.jpg
@@ -169,45 +164,66 @@ image_20260601_0001.jpg
 image_20260601_1423_0001.jpg
 image_meinamix_v11_0001.jpg
 image_meinamix_v11_20260601_1423_0001.jpg
-
 ```
 
-`label` ピンが接続されている場合は、このように自動的にファイル名にも組み込まれるのじゃ。
-また、タイムスタンプは「ノード実行時に1回だけ」固定されるため、同じバッチ内で生成された画像はすべて同じ時刻のファイル名になるぞ。途中で分が切り替わってファイル名が割れる心配はない！
+日時はノード実行時に一度だけ取得するため、同じバッチ内の画像には同じ日時部分が使用されます。連番は最低4桁になるようゼロ埋めされます。
 
-## 👁️ プレビューに関するポリシー
+## JPEG設定
 
-繰り返すが、このノードは意図的にプレビュー画像を返さない仕様にしておる。
-プレビューを見たい場合は、このノードの直前で `IMAGE` テンソルを分岐させ、お好みのプレビュー専用ノード（Preview Imageなど）を繋ぐのじゃ。
+既定値は画質とファイルサイズのバランスを重視しています。
 
-**推奨する配線の例:**
+```text
+quality: 80
+subsampling: 4:2:2
+progressive: False
+```
+
+保存・比較用途で高画質を優先する場合：
+
+```text
+quality: 95
+subsampling: 4:4:4
+```
+
+大量のCheckpointを確認する際にファイルサイズを抑える場合：
+
+```text
+quality: 75～85
+subsampling: 4:2:0
+```
+
+## プレビューを使用する場合
+
+このノードは意図的にプレビューを返しません。必要な場合は保存前に画像を分岐してください。
 
 ```text
 VAE Decode / IMAGE
-  ├─ Preview node (ここでお顔を見るのじゃ！)
-  └─ GM Image JPEG Save (こちらは黙々とディスクへ書き込む！)
-
+  ├─ Preview Image
+  └─ GM Image JPEG Save
 ```
 
-## 🗺️ プロジェクトの展望 (Project scope)
+## 開発・テスト
 
-このリポジトリは、将来的に GraphicsMagick を用いた他の保存系ノードを追加できるように **GMImageSaver** という名前にしておる。
+Python 3.10以降で次のコマンドを実行します。
 
-じゃが、今回の初期ノードはあえて「狭い」機能を追求したぞ。
+```bash
+python -m unittest discover -s tests -v
+```
 
-* JPEG保存のみ
-* プレビューなし
-* PNGサポートなし
-* メタデータの自動注入など、複雑なおせっかい機能なし
-* 外部プロジェクト（HandpickerSuiteなど）との強制的な結合なし
+合意済みの仕様と退行防止条件は [`.spec`](.spec) ディレクトリに記録しています。
 
-この「引き算の美学」を楽しんでくれると嬉しいのう！
+## プロジェクトの範囲
 
-## 📄 ライセンス
+将来的にGraphicsMagickを用いた他の保存ノードを追加できるよう、プロジェクト名をGMImageSaverとしています。現在のノードは意図的に次の範囲へ絞っています。
 
-GPL-3.0（ComfyUI本体の掟に従っておるぞ！） じゃ。自由に、そして自己責任で使い倒すのじゃぞ！
+- JPEG出力のみ
+- プレビューおよび画像パススルーなし
+- PNGサポートなし
+- ワークフローメタデータの自動注入なし
+- 外部プロジェクトへの直接依存なし
 
-## 📣 宣伝画像
+PNGで保存する場合は、ComfyUI標準のSave Imageノードを使用してください。
 
-<img width="1055" height="1491" alt="ComfyUI-GMImageSaver紹介ポスター" src="https://github.com/user-attachments/assets/a03078ea-2726-488f-a018-59b0c190ff39" />
+## ライセンス
 
+GPL-3.0。[LICENSE](LICENSE) を参照してください。
